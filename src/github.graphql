@@ -1,16 +1,84 @@
-query UserActivity($username: String!, $from: DateTime!, $to: DateTime!) {
+query UserActivity(
+  $username: String!, 
+  $from: DateTime!, 
+  $to: DateTime!, 
+  $issuesFirst: Int!, 
+  $issuesAfter: String, 
+  $prsFirst: Int!, 
+  $prsAfter: String, 
+  $prReviewsFirst: Int!, 
+  $prReviewsAfter: String
+) {
   user(login: $username) {
-    contributionsCollection (from: $from, to: $to) {
+    contributionsCollection(from: $from, to: $to) {
       totalCommitContributions
       totalIssueContributions
       totalPullRequestContributions
       totalPullRequestReviewContributions
+      contributionCalendar {
+        totalContributions
+        weeks {
+          contributionDays {
+            date
+            contributionCount
+            weekday
+          }
+        }
+      }
       commitContributionsByRepository {
         repository {
           nameWithOwner
+          updatedAt
         }
         contributions {
           totalCount
+        }
+      }
+      issueContributions(first: $issuesFirst, after: $issuesAfter) {
+        totalCount
+        pageInfo {
+          endCursor
+          hasNextPage
+        }
+        nodes {
+          issue {
+            number
+            title
+            url
+            createdAt
+          }
+        }
+      }
+      pullRequestContributions(first: $prsFirst, after: $prsAfter) {
+        totalCount
+        pageInfo {
+          endCursor
+          hasNextPage
+        }
+        nodes {
+          pullRequest {
+            number
+            title
+            url
+            createdAt
+          }
+        }
+      }
+      pullRequestReviewContributions(first: $prReviewsFirst, after: $prReviewsAfter) {
+        totalCount
+        pageInfo {
+          endCursor
+          hasNextPage
+        }
+        nodes {
+          pullRequestReview {
+            pullRequest {
+              number
+              title
+              url
+            }
+          }
+          occurredAt
         }
       }
     }

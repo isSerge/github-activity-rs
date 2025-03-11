@@ -14,15 +14,19 @@ type ContributionsCollection {
   totalIssueContributions: Int!
   totalPullRequestContributions: Int!
   totalPullRequestReviewContributions: Int!
+  contributionCalendar: ContributionCalendar!
   commitContributionsByRepository: [CommitContributionsByRepository!]!
+  issueContributions: IssueContributions!
+  pullRequestContributions: PullRequestContributions!
+  pullRequestReviewContributions: PullRequestReviewContributions!
 }
 
 type CommitContributionsByRepository {
   repository: Repository!
-  contributions: ContributionCalendar!
+  contributions: CreatedCommitContributionConnection!
 }
 
-type ContributionCalendar {
+type CreatedCommitContributionConnection {
   totalCount: Int!
 }
 
@@ -31,58 +35,74 @@ type Repository {
   updatedAt: DateTime!
 }
 
-type RepositoryConnection {
-  nodes: [Repository]
+type ContributionCalendar {
+  totalContributions: Int!
+  weeks: [ContributionCalendarWeek!]!
 }
 
-type IssueConnection {
-  nodes: [Issue]
+type ContributionCalendarWeek {
+  contributionDays: [ContributionCalendarDay!]!
 }
 
-type PullRequestConnection {
-  nodes: [PullRequest]
+type ContributionCalendarDay {
+  date: DateTime!
+  contributionCount: Int!
+  weekday: Int!
+}
+
+type IssueContributions {
+  totalCount: Int!
+  pageInfo: PageInfo!
+  nodes: [IssueContributionNode!]
+}
+
+type IssueContributionNode {
+  issue: Issue!
 }
 
 type Issue {
+  number: Int!
   title: String!
   createdAt: DateTime!
+  url: String!
   repository: Repository!
+}
+
+type PullRequestContributions {
+  totalCount: Int!
+  pageInfo: PageInfo!
+  nodes: [PullRequestContributionNode!]
+}
+
+type PullRequestContributionNode {
+  pullRequest: PullRequest!
 }
 
 type PullRequest {
+  number: Int!
   title: String!
   createdAt: DateTime!
+  url: String!
   repository: Repository!
 }
 
-input RepositoryOrder {
-  field: RepositoryOrderField!
-  direction: OrderDirection!
+type PullRequestReviewContributions {
+  totalCount: Int!
+  pageInfo: PageInfo!
+  nodes: [PullRequestReviewContributionNode!]
 }
 
-input IssueOrder {
-  field: IssueOrderField!
-  direction: OrderDirection!
+type PullRequestReviewContributionNode {
+  pullRequestReview: PullRequestReview!
+  occurredAt: DateTime!
 }
 
-input PullRequestOrder {
-  field: PullRequestOrderField!
-  direction: OrderDirection!
+type PullRequestReview {
+  pullRequest: PullRequest!
+  createdAt: DateTime!
 }
 
-enum RepositoryOrderField {
-  UPDATED_AT
-}
-
-enum IssueOrderField {
-  CREATED_AT
-}
-
-enum PullRequestOrderField {
-  CREATED_AT
-}
-
-enum OrderDirection {
-  ASC
-  DESC
+type PageInfo {
+  endCursor: String
+  hasNextPage: Boolean!
 }
