@@ -1,8 +1,9 @@
 use anyhow::{Context, Result, bail};
-use chrono::{Duration, Utc};
+use chrono::{DateTime as ChronoDateTime, Utc};
 use graphql_client::{Response, GraphQLQuery};
 use log::{debug, error, info};
 
+// GraphQL DateTime scalar type
 type DateTime = String;
 
 #[derive(GraphQLQuery)]
@@ -17,10 +18,9 @@ pub struct UserActivity;
 pub async fn fetch_activity(
     client: &reqwest::Client,
     username: &str,
-    duration: Duration,
+    start_date: ChronoDateTime<Utc>,
+    end_date: ChronoDateTime<Utc>,
 ) -> Result<user_activity::ResponseData> {
-    let end_date = Utc::now();
-    let start_date = end_date - duration;
     info!("Fetching activity from {} to {}", start_date, end_date);
 
     let variables = user_activity::Variables {

@@ -1,4 +1,4 @@
-use chrono::Duration;
+use chrono::{DateTime, Duration, Utc};
 use clap::Parser;
 use regex::Regex;
 use std::str::FromStr;
@@ -11,9 +11,40 @@ pub struct Args {
     #[arg(short, long)]
     pub username: GitHubUsername,
 
-    /// Time period (day, week, month)
-    #[arg(short, long, value_parser = parse_period)]
-    pub period: Duration,
+    /// Time period (e.g., 1d, 7d, 30d, 2w, 1m, 3m)
+    /// Mutually exclusive with --from and --to
+    #[arg(short, long, value_parser = parse_period, conflicts_with_all = ["from", "to"])]
+    pub period: Option<Duration>,
+
+    /// Start date in ISO 8601 format (e.g., 2024-01-01 or 2024-01-01T00:00:00Z)
+    /// Required if --to is specified
+    #[arg(long, requires = "to", value_parser = parse_datetime)]
+    pub from: Option<DateTime<Utc>>,
+
+    /// End date in ISO 8601 format (e.g., 2024-03-01 or 2024-03-01T00:00:00Z)
+    /// Required if --from is specified
+    #[arg(long, requires = "from", value_parser = parse_datetime)]
+    pub to: Option<DateTime<Utc>>,
+}
+
+impl Args {
+    /// Get the date range for the query
+    pub fn get_date_range(&self) -> Result<(DateTime<Utc>, DateTime<Utc>), String> {
+        match (self.period, self.from, self.to) {
+            (Some(period), None, None) => {
+                let end = Utc::now();
+                let start = end - period;
+                Ok((start, end))
+            }
+            (None, Some(from), Some(to)) => {
+                if from >= to {
+                    return Err("Start date must be before end date".to_string());
+                }
+                Ok((from, to))
+            }
+            _ => Err("Either specify --period or both --from and --to".to_string()),
+        }
+    }
 }
 
 /// A newtype representing a GitHub username with validation.
@@ -47,12 +78,39 @@ impl std::fmt::Display for GitHubUsername {
     }
 }
 
-/// Parses a time period string ("day", "week", or "month") into a `chrono::Duration`.
-pub fn parse_period(arg: &str) -> Result<Duration, String> {
-    match arg.to_lowercase().as_str() {
-        "day" => Ok(Duration::days(1)),
-        "week" => Ok(Duration::weeks(1)),
-        "month" => Ok(Duration::days(30)),
-        _ => Err(format!("Invalid period: {}. Use 'day', 'week', or 'month'", arg)),
+/// Parses a time period string into a `chrono::Duration`.
+fn parse_period(arg: &str) -> Result<Duration, String> {
+    let (amount, unit) = arg.split_at(
+        arg.find(|c: char| !c.is_ascii_digit())
+            .ok_or_else(|| "Invalid period format. Use e.g., 1d, 7d, 30d, 2w, 1m")?
+    );
+
+    let amount: i64 = amount.parse()
+        .map_err(|_| "Invalid number in period")?;
+
+    match unit {
+        "d" => Ok(Duration::days(amount)),
+        "w" => Ok(Duration::weeks(amount)),
+        "m" => Ok(Duration::days(amount * 30)),
+        _ => Err(format!("Invalid period unit: {}. Use d (days), w (weeks), or m (months)", unit)),
     }
+}
+
+/// Parses a datetime string in ISO 8601 format
+fn parse_datetime(s: &str) -> Result<DateTime<Utc>, String> {
+    // Try parsing with different formats
+    if let Ok(dt) = DateTime::parse_from_rfc3339(s) {
+        return Ok(dt.with_timezone(&Utc));
+    }
+
+    // For simple dates (YYYY-MM-DD), parse as midnight UTC
+    if let Ok(naive_date) = chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d") {
+      return Ok(DateTime::<Utc>::from_naive_utc_and_offset(
+          naive_date.and_hms_opt(0, 0, 0)
+              .ok_or_else(|| "Invalid time conversion".to_string())?,
+          Utc,
+      ));
+  }
+
+    Err(format!("Invalid date format. Use ISO 8601 format (e.g., 2024-01-01 or 2024-01-01T00:00:00Z)"))
 }

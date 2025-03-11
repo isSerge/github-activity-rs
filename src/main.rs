@@ -33,7 +33,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build()?;
     debug!("HTTP client built successfully.");
 
-    let activity = github::fetch_activity(&client, &args.username.to_string(), args.period).await?;
+    let (start_date, end_date) = args.get_date_range()
+        .map_err(|e| anyhow::anyhow!("Failed to get date range: {}", e))?;
+    info!("Fetching activity from {} to {}", start_date, end_date);
+
+    let activity = github::fetch_activity(&client, &args.username.to_string(), start_date, end_date).await?;
     info!("Activity fetched successfully.");
 
     println!(
