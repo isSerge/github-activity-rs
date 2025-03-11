@@ -3,7 +3,6 @@ use clap::Parser;
 use dotenv::dotenv;
 use graphql_client::{GraphQLQuery, Response};
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, USER_AGENT};
-use serde_json::Value;
 use std::env;
 
 #[derive(Parser, Debug)]
@@ -31,7 +30,7 @@ fn parse_period(arg: &str) -> Result<Duration, String> {
 #[graphql(
     schema_path = "src/schema.graphql",
     query_path = "src/github.graphql",
-    response_derives = "Debug"
+    response_derives = "Debug, Default, serde::Serialize"
 )]
 pub struct UserActivity;
 
@@ -65,14 +64,12 @@ async fn fetch_activity(
     client: &reqwest::Client,
     username: &str,
     duration: Duration,
-) -> Result<Value, Box<dyn std::error::Error>> {
+) -> Result<user_activity::ResponseData, Box<dyn std::error::Error>> {
     let end_date = Utc::now();
     let _start_date = end_date - duration;
 
     let variables = user_activity::Variables {
         username: username.to_string(),
-        // from: start_date.to_rfc3339(),
-        // to: end_date.to_rfc3339(),
     };
 
     let request_body = UserActivity::build_query(variables);
@@ -83,8 +80,7 @@ async fn fetch_activity(
         .send()
         .await?;
 
-
-    let response_body: Response<Value> = res.json().await?;
+    let response_body: Response<user_activity::ResponseData> = res.json().await?;
     
     if let Some(errors) = response_body.errors {
         eprintln!("GraphQL Errors: {:?}", errors);
