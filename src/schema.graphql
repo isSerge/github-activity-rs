@@ -7,18 +7,6 @@ type Query {
 type User {
   login: String!
   contributionsCollection(from: DateTime, to: DateTime): ContributionsCollection!
-  repositories(
-    first: Int
-    orderBy: RepositoryOrder
-  ): RepositoryConnection!
-  issues(
-    first: Int
-    orderBy: IssueOrder
-  ): IssueConnection!
-  pullRequests(
-    first: Int
-    orderBy: PullRequestOrder
-  ): PullRequestConnection!
 }
 
 type ContributionsCollection {

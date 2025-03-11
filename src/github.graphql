@@ -1,5 +1,18 @@
-query UserActivity($username: String!) {
-    user(login: $username) {
-        login
+query UserActivity($username: String!, $from: DateTime!, $to: DateTime!) {
+  user(login: $username) {
+    contributionsCollection (from: $from, to: $to) {
+      totalCommitContributions
+      totalIssueContributions
+      totalPullRequestContributions
+      totalPullRequestReviewContributions
+      commitContributionsByRepository {
+        repository {
+          nameWithOwner
+        }
+        contributions {
+          totalCount
+        }
+      }
     }
-} 
+  }
+}

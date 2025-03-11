@@ -3,6 +3,8 @@ use chrono::{Duration, Utc};
 use graphql_client::{Response, GraphQLQuery};
 use log::{debug, error, info};
 
+type DateTime = String;
+
 #[derive(GraphQLQuery)]
 #[graphql(
     schema_path = "src/schema.graphql",
@@ -23,6 +25,8 @@ pub async fn fetch_activity(
 
     let variables = user_activity::Variables {
         username: username.to_string(),
+        from: start_date.to_rfc3339(),
+        to: end_date.to_rfc3339(),
     };
 
     let request_body = UserActivity::build_query(variables);
