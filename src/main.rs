@@ -1,8 +1,9 @@
+use anyhow::{Context, Result, bail};
 use chrono::{Duration, Utc};
 use clap::Parser;
 use dotenv::dotenv;
 use graphql_client::{GraphQLQuery, Response};
-use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, USER_AGENT};
+use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue, USER_AGENT};
 use std::env;
 
 #[derive(Parser, Debug)]
@@ -22,7 +23,10 @@ fn parse_period(arg: &str) -> Result<Duration, String> {
         "day" => Ok(Duration::days(1)),
         "week" => Ok(Duration::weeks(1)),
         "month" => Ok(Duration::days(30)),
-        _ => Err(format!("Invalid period: {}. Use 'day', 'week', or 'month'", arg)),
+        _ => Err(format!(
+            "Invalid period: {}. Use 'day', 'week', or 'month'",
+            arg
+        )),
     }
 }
 
@@ -37,11 +41,11 @@ pub struct UserActivity;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
-    
+
     let args = Args::parse();
-    
-    let github_token = env::var("GITHUB_TOKEN")
-        .expect("GITHUB_TOKEN environment variable is required");
+
+    let github_token =
+        env::var("GITHUB_TOKEN").expect("GITHUB_TOKEN environment variable is required");
 
     let mut headers = HeaderMap::new();
     headers.insert(
@@ -49,13 +53,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         HeaderValue::from_str(&format!("Bearer {}", github_token))?,
     );
     headers.insert(USER_AGENT, HeaderValue::from_static("github-activity-rs"));
-    
+
     let client = reqwest::Client::builder()
         .default_headers(headers)
         .build()?;
 
     let activity = fetch_activity(&client, &args.username, args.period).await?;
-    println!("{}", serde_json::to_string_pretty(&activity)?);
+
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&activity).context("Failed to serialize activity to JSON")?
+    );
 
     Ok(())
 }
@@ -64,7 +72,7 @@ async fn fetch_activity(
     client: &reqwest::Client,
     username: &str,
     duration: Duration,
-) -> Result<user_activity::ResponseData, Box<dyn std::error::Error>> {
+) -> Result<user_activity::ResponseData> {
     let end_date = Utc::now();
     let _start_date = end_date - duration;
 
@@ -78,13 +86,19 @@ async fn fetch_activity(
         .post("https://api.github.com/graphql")
         .json(&request_body)
         .send()
-        .await?;
+        .await
+        .context("Failed to send request to GitHub GraphQL API")?;
 
-    let response_body: Response<user_activity::ResponseData> = res.json().await?;
-    
+    let response_body: Response<user_activity::ResponseData> = res
+        .json()
+        .await
+        .context("Failed to parse JSON response from GitHub GraphQL API")?;
+
     if let Some(errors) = response_body.errors {
-        eprintln!("GraphQL Errors: {:?}", errors);
+        bail!("GraphQL errors: {:?}", errors);
     }
 
-    Ok(response_body.data.unwrap_or_default())
+    response_body
+        .data
+        .ok_or_else(|| anyhow::anyhow!("No data received in GraphQL response"))
 }
