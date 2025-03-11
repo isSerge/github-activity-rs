@@ -63,11 +63,8 @@ async fn fetch_activity(
         .send()
         .await?;
 
-    // Print the raw response for debugging
-    let text = res.text().await?;
-    println!("Raw response: {}", text);
-    
-    let response_body: Response<Value> = serde_json::from_str(&text)?;
+
+    let response_body: Response<Value> = res.json().await?;
     
     if let Some(errors) = response_body.errors {
         eprintln!("GraphQL Errors: {:?}", errors);
