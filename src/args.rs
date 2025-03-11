@@ -25,6 +25,14 @@ pub struct Args {
     /// Required if --from is specified
     #[arg(long, requires = "from", value_parser = parse_datetime)]
     pub to: Option<DateTime<Utc>>,
+
+    /// Optional repository filter in the format "owner/repo"
+    #[arg(long)]
+    pub repo: Option<String>,
+
+    /// Optional organization filter (only contributions from repos in this organization)
+    #[arg(long)]
+    pub org: Option<String>,
 }
 
 impl Args {

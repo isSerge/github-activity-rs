@@ -1,9 +1,9 @@
 mod args;
 mod github;
 
-use clap::Parser;
 use anyhow::Context;
 use args::Args;
+use clap::Parser;
 use dotenv::dotenv;
 use log::{debug, info};
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue, USER_AGENT};
@@ -33,16 +33,54 @@ async fn main() -> anyhow::Result<()> {
         .build()?;
     debug!("HTTP client built successfully.");
 
-    let (start_date, end_date) = args.get_date_range()
+    let (start_date, end_date) = args
+        .get_date_range()
         .map_err(|e| anyhow::anyhow!("Failed to get date range: {}", e))?;
     info!("Fetching activity from {} to {}", start_date, end_date);
 
-    let activity = github::fetch_activity(&client, &args.username.to_string(), start_date, end_date).await?;
+    let activity =
+        github::fetch_activity(&client, &args.username.to_string(), start_date, end_date).await?;
     info!("Activity fetched successfully.");
+
+    // Assuming the generated type has a structure like:
+    // activity.user.contributionsCollection.commitContributionsByRepository
+    let mut filtered_activity = activity;
+
+    // If a repo filter is provided, retain only contributions from that repository.
+    if let Some(ref repo_filter) = args.repo {
+        if let Some(ref mut contributions) = filtered_activity
+            .user
+            .as_mut()
+            .and_then(|u| Some(&mut u.contributions_collection))
+        {
+            contributions
+                .commit_contributions_by_repository
+                .retain(|repo_contrib| repo_contrib.repository.name_with_owner == *repo_filter);
+        }
+    }
+
+    // If an organization filter is provided, retain only contributions from repos within that organization.
+    if let Some(ref org_filter) = args.org {
+        if let Some(ref mut contributions) = filtered_activity
+            .user
+            .as_mut()
+            .and_then(|u| Some(&mut u.contributions_collection))
+        {
+            contributions
+                .commit_contributions_by_repository
+                .retain(|repo_contrib| {
+                    // Check if the repository name starts with "org_filter/".
+                    repo_contrib
+                        .repository
+                        .name_with_owner
+                        .starts_with(&format!("{}/", org_filter))
+                });
+        }
+    }
 
     println!(
         "{}",
-        serde_json::to_string_pretty(&activity).context("Failed to serialize activity to JSON")?
+        serde_json::to_string_pretty(&filtered_activity).context("Failed to serialize activity to JSON")?
     );
 
     Ok(())
