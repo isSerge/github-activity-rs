@@ -419,6 +419,7 @@ dependencies = [
  "env_logger",
  "graphql_client",
  "log",
+ "regex",
  "reqwest",
  "serde",
  "serde_json",
