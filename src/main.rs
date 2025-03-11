@@ -2,7 +2,7 @@ mod args;
 mod github;
 
 use clap::Parser;
-use anyhow::{Context, Result};
+use anyhow::Context;
 use args::Args;
 use dotenv::dotenv;
 use log::{debug, info};
@@ -10,7 +10,7 @@ use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue, USER_AGENT};
 use std::env;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> anyhow::Result<()> {
     dotenv().ok();
     env_logger::init();
 
