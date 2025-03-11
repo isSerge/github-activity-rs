@@ -10,7 +10,7 @@ type DateTime = String;
 #[graphql(
     schema_path = "src/schema.graphql",
     query_path = "src/github.graphql",
-    response_derives = "Debug, Default, serde::Serialize",
+    response_derives = "Debug, Default, serde::Serialize, Clone",
     variables_derives = "Debug"
 )]
 pub struct UserActivity;

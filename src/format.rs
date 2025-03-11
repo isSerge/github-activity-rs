@@ -1,7 +1,6 @@
 use chrono::{DateTime as ChronoDateTime, Utc};
 use crate::github::user_activity;
 
-
 /// Build a plain text report from the activity data.
 pub fn format_plain(
   activity: &user_activity::ResponseData,

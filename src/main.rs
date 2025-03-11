@@ -1,15 +1,56 @@
 mod args;
-mod github;
 mod format;
+mod github;
 
-use format::{format_plain, format_markdown};
+use crate::github::user_activity;
 use anyhow::Context;
 use args::{Args, OutputFormat};
 use clap::Parser;
 use dotenv::dotenv;
+use format::{format_markdown, format_plain};
 use log::{debug, info};
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue, USER_AGENT};
 use std::env;
+
+// Helper function to filter activity based on repo and organization filters.
+fn filter_activity(
+    mut activity: user_activity::ResponseData,
+    repo_filter: &Option<String>,
+    org_filter: &Option<String>,
+) -> user_activity::ResponseData {
+    if let Some(user) = activity.user.as_mut() {
+        // Access contributions_collection field.
+        let cc = &user.contributions_collection;
+        // We clone the current list and filter it, then replace the list.
+        let mut filtered_repos = cc.commit_contributions_by_repository.clone();
+
+        if let Some(repo_filter) = repo_filter {
+            filtered_repos.retain(|repo_contrib| {
+                // Field names should be in snake_case per graphql_client conversion.
+                repo_contrib.repository.name_with_owner == *repo_filter
+            });
+        }
+
+        if let Some(org_filter) = org_filter {
+            filtered_repos.retain(|repo_contrib| {
+                repo_contrib
+                    .repository
+                    .name_with_owner
+                    .starts_with(&format!("{}/", org_filter))
+            });
+        }
+
+        // If needed, update the user’s contributions_collection with the filtered list.
+        // (This requires that contributions_collection is mutable. Since we're cloning
+        // the user in the ResponseData, we can build a new ResponseData with the filtered list.)
+        if let Some(mut user) = activity.user {
+            user.contributions_collection
+                .commit_contributions_by_repository = filtered_repos;
+            activity.user = Some(user);
+        }
+    }
+    activity
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -44,41 +85,7 @@ async fn main() -> anyhow::Result<()> {
         github::fetch_activity(&client, &args.username.to_string(), start_date, end_date).await?;
     info!("Activity fetched successfully.");
 
-    // Assuming the generated type has a structure like:
-    // activity.user.contributionsCollection.commitContributionsByRepository
-    let mut filtered_activity = activity;
-
-    // If a repo filter is provided, retain only contributions from that repository.
-    if let Some(ref repo_filter) = args.repo {
-        if let Some(ref mut contributions) = filtered_activity
-            .user
-            .as_mut()
-            .and_then(|u| Some(&mut u.contributions_collection))
-        {
-            contributions
-                .commit_contributions_by_repository
-                .retain(|repo_contrib| repo_contrib.repository.name_with_owner == *repo_filter);
-        }
-    }
-
-    // If an organization filter is provided, retain only contributions from repos within that organization.
-    if let Some(ref org_filter) = args.org {
-        if let Some(ref mut contributions) = filtered_activity
-            .user
-            .as_mut()
-            .and_then(|u| Some(&mut u.contributions_collection))
-        {
-            contributions
-                .commit_contributions_by_repository
-                .retain(|repo_contrib| {
-                    // Check if the repository name starts with "org_filter/".
-                    repo_contrib
-                        .repository
-                        .name_with_owner
-                        .starts_with(&format!("{}/", org_filter))
-                });
-        }
-    }
+    let filtered_activity = filter_activity(activity, &args.repo, &args.org);
 
     match args.format {
         OutputFormat::Json => {
