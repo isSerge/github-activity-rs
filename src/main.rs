@@ -1,9 +1,31 @@
 use chrono::{Duration, Utc};
+use clap::Parser;
 use dotenv::dotenv;
 use graphql_client::{GraphQLQuery, Response};
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, USER_AGENT};
 use serde_json::Value;
 use std::env;
+
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// GitHub username
+    #[arg(short, long)]
+    username: String,
+
+    /// Time period (day, week, month)
+    #[arg(short, long, value_parser = parse_period)]
+    period: Duration,
+}
+
+fn parse_period(arg: &str) -> Result<Duration, String> {
+    match arg.to_lowercase().as_str() {
+        "day" => Ok(Duration::days(1)),
+        "week" => Ok(Duration::weeks(1)),
+        "month" => Ok(Duration::days(30)),
+        _ => Err(format!("Invalid period: {}. Use 'day', 'week', or 'month'", arg)),
+    }
+}
 
 #[derive(GraphQLQuery)]
 #[graphql(
@@ -17,25 +39,23 @@ pub struct UserActivity;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
     
+    let args = Args::parse();
+    
     let github_token = env::var("GITHUB_TOKEN")
         .expect("GITHUB_TOKEN environment variable is required");
-    
-    let username = "isserge";
 
     let mut headers = HeaderMap::new();
     headers.insert(
         AUTHORIZATION,
         HeaderValue::from_str(&format!("Bearer {}", github_token))?,
     );
-    headers.insert(
-        USER_AGENT,
-        HeaderValue::from_str("github-activity-rs")?,
-    );
+    headers.insert(USER_AGENT, HeaderValue::from_static("github-activity-rs"));
+    
     let client = reqwest::Client::builder()
         .default_headers(headers)
         .build()?;
 
-    let activity = fetch_activity(&client, &username, Duration::weeks(1)).await?;
+    let activity = fetch_activity(&client, &args.username, args.period).await?;
     println!("{}", serde_json::to_string_pretty(&activity)?);
 
     Ok(())
