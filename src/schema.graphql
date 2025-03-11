@@ -1,0 +1,100 @@
+scalar DateTime
+
+type Query {
+  user(login: String!): User
+}
+
+type User {
+  login: String!
+  contributionsCollection(from: DateTime, to: DateTime): ContributionsCollection!
+  repositories(
+    first: Int
+    orderBy: RepositoryOrder
+  ): RepositoryConnection!
+  issues(
+    first: Int
+    orderBy: IssueOrder
+  ): IssueConnection!
+  pullRequests(
+    first: Int
+    orderBy: PullRequestOrder
+  ): PullRequestConnection!
+}
+
+type ContributionsCollection {
+  totalCommitContributions: Int!
+  totalIssueContributions: Int!
+  totalPullRequestContributions: Int!
+  totalPullRequestReviewContributions: Int!
+  commitContributionsByRepository: [CommitContributionsByRepository!]!
+}
+
+type CommitContributionsByRepository {
+  repository: Repository!
+  contributions: ContributionCalendar!
+}
+
+type ContributionCalendar {
+  totalCount: Int!
+}
+
+type Repository {
+  nameWithOwner: String!
+  updatedAt: DateTime!
+}
+
+type RepositoryConnection {
+  nodes: [Repository]
+}
+
+type IssueConnection {
+  nodes: [Issue]
+}
+
+type PullRequestConnection {
+  nodes: [PullRequest]
+}
+
+type Issue {
+  title: String!
+  createdAt: DateTime!
+  repository: Repository!
+}
+
+type PullRequest {
+  title: String!
+  createdAt: DateTime!
+  repository: Repository!
+}
+
+input RepositoryOrder {
+  field: RepositoryOrderField!
+  direction: OrderDirection!
+}
+
+input IssueOrder {
+  field: IssueOrderField!
+  direction: OrderDirection!
+}
+
+input PullRequestOrder {
+  field: PullRequestOrderField!
+  direction: OrderDirection!
+}
+
+enum RepositoryOrderField {
+  UPDATED_AT
+}
+
+enum IssueOrderField {
+  CREATED_AT
+}
+
+enum PullRequestOrderField {
+  CREATED_AT
+}
+
+enum OrderDirection {
+  ASC
+  DESC
+}
