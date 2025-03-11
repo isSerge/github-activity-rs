@@ -33,6 +33,10 @@ pub struct Args {
     /// Optional organization filter (only contributions from repos in this organization)
     #[arg(long)]
     pub org: Option<String>,
+
+    /// Output format: plain, markdown, or json
+    #[arg(short, long, default_value = "json", value_parser = parse_output_format)]
+    pub format: OutputFormat,
 }
 
 impl Args {
@@ -121,4 +125,29 @@ fn parse_datetime(s: &str) -> Result<DateTime<Utc>, String> {
   }
 
     Err(format!("Invalid date format. Use ISO 8601 format (e.g., 2024-01-01 or 2024-01-01T00:00:00Z)"))
+}
+
+/// Supported output formats.
+#[derive(Debug, Clone)]
+pub enum OutputFormat {
+    Plain,
+    Markdown,
+    Json,
+}
+
+impl FromStr for OutputFormat {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "plain" => Ok(OutputFormat::Plain),
+            "markdown" | "md" => Ok(OutputFormat::Markdown),
+            "json" => Ok(OutputFormat::Json),
+            _ => Err(format!("Invalid output format: {}. Use plain, markdown, or json", s)),
+        }
+    }
+}
+
+/// A helper to use the FromStr implementation.
+fn parse_output_format(s: &str) -> Result<OutputFormat, String> {
+    s.parse()
 }

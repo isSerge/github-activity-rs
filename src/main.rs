@@ -1,8 +1,10 @@
 mod args;
 mod github;
+mod format;
 
+use format::{format_plain, format_markdown};
 use anyhow::Context;
-use args::Args;
+use args::{Args, OutputFormat};
 use clap::Parser;
 use dotenv::dotenv;
 use log::{debug, info};
@@ -78,10 +80,27 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    println!(
-        "{}",
-        serde_json::to_string_pretty(&filtered_activity).context("Failed to serialize activity to JSON")?
-    );
+    match args.format {
+        OutputFormat::Json => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&filtered_activity)
+                    .context("Failed to serialize activity to JSON")?
+            );
+        }
+        OutputFormat::Plain => {
+            println!(
+                "{}",
+                format_plain(&filtered_activity, start_date, end_date, &args.username.0)
+            );
+        }
+        OutputFormat::Markdown => {
+            println!(
+                "{}",
+                format_markdown(&filtered_activity, start_date, end_date, &args.username.0)
+            );
+        }
+    }
 
     Ok(())
 }
