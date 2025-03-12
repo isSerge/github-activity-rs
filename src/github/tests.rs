@@ -2,25 +2,26 @@
 mod tests {
     use crate::github::GithubClient;
     use chrono::Utc;
-    use serde_json::json;
-    use serial_test::serial;
+    use serde_json::{json, Value};
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use temp_env::with_var;
     use wiremock::matchers::{method, path};
-    use wiremock::{Mock, ResponseTemplate};
+    use wiremock::{Mock, ResponseTemplate, MockServer};
+    use tokio::runtime::Runtime;
 
     // Helper: Build a full response containing all three connections.
     // For the connection of interest, we provide Some(node) and specific pageInfo.
     // For the others, we supply dummy empty responses.
     fn build_full_response(
-        issue: Option<serde_json::Value>,
-        issue_page_info: serde_json::Value,
-        pr: Option<serde_json::Value>,
-        pr_page_info: serde_json::Value,
-        pr_review: Option<serde_json::Value>,
-        pr_review_page_info: serde_json::Value,
-    ) -> serde_json::Value {
-        serde_json::json!({
+        issue: Option<Value>,
+        issue_page_info: Value,
+        pr: Option<Value>,
+        pr_page_info: Value,
+        pr_review: Option<Value>,
+        pr_review_page_info: Value,
+    ) -> Value {
+        json!({
             "data": {
                 "user": {
                     "contributionsCollection": {
@@ -64,58 +65,62 @@ mod tests {
         GithubClient::new(dummy_token, username, start_date, end_date).unwrap()
     }
 
-    #[tokio::test]
-    #[serial]
-    async fn test_fetch_activity_base_error() {
-        // Start a mock server.
-        let mock_server = wiremock::MockServer::start().await;
+    #[test]
+fn test_fetch_activity_base_error() {
+    // Create an initial runtime for async setup.
+    let rt = Runtime::new().unwrap();
 
-        // Build a fake error response for the base query.
+    // Start the mock server and mount the error response.
+    let mock_server = rt.block_on(async {
+        let server = MockServer::start().await;
         let error_response = json!({
             "data": null,
             "errors": [
                 { "message": "Base request error" }
             ]
         });
-
-        // Mount a mock that returns the error response.
         Mock::given(method("POST"))
             .and(path("/graphql"))
             .respond_with(ResponseTemplate::new(200).set_body_json(error_response))
-            .mount(&mock_server)
+            .mount(&server)
             .await;
+        server
+    });
 
-        // Set the environment variable so that the client uses our mock server.
-        unsafe {
-            std::env::set_var(
-                "GITHUB_GRAPHQL_URL",
-                format!("{}/graphql", mock_server.uri()),
-            );
-        }
+    // Now that the server is set up, use temp_env::with_var (closure-based).
+    with_var(
+        "GITHUB_GRAPHQL_URL",
+        Some(format!("{}/graphql", mock_server.uri())),
+        || {
+            // Create a fresh runtime inside the closure.
+            let rt2 = Runtime::new().unwrap();
+            rt2.block_on(async {
+                let client = create_test_client();
+                let result = client.fetch_activity().await;
+                assert!(
+                    result.is_err(),
+                    "Expected fetch_activity to fail due to base query errors"
+                );
+                let err_str = format!("{:?}", result.err().unwrap());
+                assert!(
+                    err_str.contains("GraphQL errors in base request"),
+                    "Error message did not contain expected text: {}",
+                    err_str
+                );
+            });
+        },
+    );
+}
+#[test]
+fn test_fetch_activity_merge_data() {
+    // Create an initial runtime for async setup.
+    let rt = Runtime::new().unwrap();
 
-        let client = create_test_client();
-        let result = client.fetch_activity().await;
+    // Start the mock server and mount the responses.
+    let mock_server = rt.block_on(async {
+        let server = MockServer::start().await;
 
-        assert!(
-            result.is_err(),
-            "Expected fetch_activity to fail due to base query errors"
-        );
-
-        let err_str = format!("{:?}", result.err().unwrap());
-        assert!(
-            err_str.contains("GraphQL errors in base request"),
-            "Error message did not contain expected text: {}",
-            err_str
-        );
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn test_fetch_activity_merge_data() {
-        // Start a mock server.
-        let mock_server = wiremock::MockServer::start().await;
-
-        // Build a base response that contains valid non-paginated fields (empty node arrays).
+        // Build the base response.
         let base_response = json!({
             "data": {
                 "user": {
@@ -149,7 +154,7 @@ mod tests {
             }
         });
 
-        // Build paginated responses for issues, pull requests, and PR reviews.
+        // Build paginated responses.
         let issue_response = build_full_response(
             Some(json!({
                 "issue": {
@@ -217,56 +222,61 @@ mod tests {
             json!({ "endCursor": null, "hasNextPage": false }),
         );
 
-        // Use an atomic counter to return responses in sequence.
+        // Use an atomic counter to sequence the responses.
         let call_counter = Arc::new(AtomicUsize::new(0));
         let counter_clone = call_counter.clone();
         Mock::given(method("POST"))
             .and(path("/graphql"))
             .respond_with(move |_req: &wiremock::Request| {
-                let call_num = counter_clone.fetch_add(1, Ordering::SeqCst);
+                let call_num =
+                    counter_clone.fetch_add(1, Ordering::SeqCst);
                 match call_num {
                     0 => ResponseTemplate::new(200).set_body_json(base_response.clone()),
                     1 => ResponseTemplate::new(200).set_body_json(issue_response.clone()),
                     2 => ResponseTemplate::new(200).set_body_json(pr_response.clone()),
                     3 => ResponseTemplate::new(200).set_body_json(pr_review_response.clone()),
-                    _ => ResponseTemplate::new(200).set_body_string("{\"data\":{\"user\":null}}"),
+                    _ => ResponseTemplate::new(200)
+                        .set_body_string("{\"data\":{\"user\":null}}"),
                 }
             })
-            .mount(&mock_server)
+            .mount(&server)
             .await;
+        server
+    });
 
-        // Set the environment variable for the mock.
-        unsafe {
-            std::env::set_var(
-                "GITHUB_GRAPHQL_URL",
-                format!("{}/graphql", mock_server.uri()),
-            );
-        }
+    // Now use temp_env::with_var in a synchronous closure.
+    with_var(
+        "GITHUB_GRAPHQL_URL",
+        Some(format!("{}/graphql", mock_server.uri())),
+        || {
+            // Create a new runtime inside the closure.
+            let rt2 = Runtime::new().unwrap();
+            rt2.block_on(async {
+                let client = create_test_client();
+                let merged_data = client
+                    .fetch_activity()
+                    .await
+                    .expect("fetch_activity failed");
+                let user = merged_data.user.expect("Expected user data");
+                let contributions = user.contributions_collection;
+                let issue_nodes = contributions
+                    .issue_contributions
+                    .nodes
+                    .expect("Expected issue nodes");
+                let pr_nodes = contributions
+                    .pull_request_contributions
+                    .nodes
+                    .expect("Expected PR nodes");
+                let pr_review_nodes = contributions
+                    .pull_request_review_contributions
+                    .nodes
+                    .expect("Expected PR review nodes");
 
-        let client = create_test_client();
-        let merged_data = client
-            .fetch_activity()
-            .await
-            .expect("fetch_activity failed");
-        let user = merged_data.user.expect("Expected user data");
-        let contributions = user.contributions_collection;
-
-        let issue_nodes = contributions
-            .issue_contributions
-            .nodes
-            .expect("Expected issue nodes");
-        let pr_nodes = contributions
-            .pull_request_contributions
-            .nodes
-            .expect("Expected PR nodes");
-        let pr_review_nodes = contributions
-            .pull_request_review_contributions
-            .nodes
-            .expect("Expected PR review nodes");
-
-        // We expect one node in each connection.
-        assert_eq!(issue_nodes.len(), 1, "Expected 1 issue node");
-        assert_eq!(pr_nodes.len(), 1, "Expected 1 PR node");
-        assert_eq!(pr_review_nodes.len(), 1, "Expected 1 PR review node");
-    }
+                assert_eq!(issue_nodes.len(), 1, "Expected 1 issue node");
+                assert_eq!(pr_nodes.len(), 1, "Expected 1 PR node");
+                assert_eq!(pr_review_nodes.len(), 1, "Expected 1 PR review node");
+            });
+        },
+    );
+  }
 }
