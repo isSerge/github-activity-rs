@@ -1,7 +1,7 @@
 mod args;
+mod filter;
 mod format;
 mod github;
-mod filter;
 
 use anyhow::Context;
 use args::{Args, OutputFormat};
