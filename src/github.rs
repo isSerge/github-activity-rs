@@ -562,4 +562,126 @@ mod tests {
             nodes.len()
         );
     }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fetch_pr_review_nodes_pagination() {
+        // This test focuses on pullRequestReviewContributions.
+        let mock_server = wiremock::MockServer::start().await;
+
+        // Build two responses: first page with a next cursor, second page final.
+        let response_page1 = build_full_response(
+            None, // issueContributions: empty
+            json!({ "endCursor": null, "hasNextPage": false }),
+            None, // pullRequestContributions: empty
+            json!({ "endCursor": null, "hasNextPage": false }),
+            Some(json!({
+                "occurredAt": "2025-03-01T00:00:00Z",
+                "pullRequestReview": {
+                    "createdAt": "2025-03-01T00:00:00Z",
+                    "pullRequest": {
+                        "number": 101,
+                        "title": "PR 1",
+                        "url": "http://example.com/pr1",
+                        "createdAt": "2025-03-01T00:00:00Z",
+                        "state": "open"
+                    }
+                }
+            })),
+            json!({ "endCursor": "pr_review_cursor1", "hasNextPage": true }),
+        );
+        let response_page2 = build_full_response(
+            None,
+            json!({ "endCursor": null, "hasNextPage": false }),
+            None,
+            json!({ "endCursor": null, "hasNextPage": false }),
+            Some(json!({
+                "occurredAt": "2025-03-02T00:00:00Z",
+                "pullRequestReview": {
+                    "createdAt": "2025-03-02T00:00:00Z",
+                    "pullRequest": {
+                        "number": 102,
+                        "title": "PR 2",
+                        "url": "http://example.com/pr2",
+                        "createdAt": "2025-03-02T00:00:00Z",
+                        "state": "closed"
+                    }
+                }
+            })),
+            json!({ "endCursor": null, "hasNextPage": false }),
+        );
+
+        // Use an atomic counter to alternate responses.
+        let call_counter = Arc::new(AtomicUsize::new(0));
+        let counter_clone = call_counter.clone();
+        Mock::given(method("POST"))
+            .and(path("/graphql"))
+            .respond_with(move |_req: &wiremock::Request| { 
+                let call_num = counter_clone.fetch_add(1, Ordering::SeqCst);
+                if call_num == 0 {
+                    ResponseTemplate::new(200).set_body_json(response_page1.clone())
+                } else if call_num == 1 {
+                    ResponseTemplate::new(200).set_body_json(response_page2.clone())
+                } else {
+                    ResponseTemplate::new(200).set_body_string("{\"data\":{\"user\":null}}")
+                }
+            })
+            .mount(&mock_server)
+            .await;
+
+        unsafe {
+            std::env::set_var(
+                "GITHUB_GRAPHQL_URL",
+                format!("{}/graphql", mock_server.uri()),
+            );
+        }
+        
+        let client = Client::new();
+        let build_vars = |cursor: Option<String>| user_activity::Variables {
+            username: "dummy".into(),
+            from: Utc::now().to_rfc3339(),
+            to: Utc::now().to_rfc3339(),
+            issues_first: 10,
+            issues_after: cursor.clone(),
+            prs_first: 10,
+            prs_after: None,
+            pr_reviews_first: 10,
+            pr_reviews_after: cursor.clone(),
+        };
+        
+        fn extract_pr_review<'a>(
+            data: &'a user_activity::ResponseData,
+        ) -> (
+            &'a Option<Vec<user_activity::UserActivityUserContributionsCollectionPullRequestReviewContributionsNodes>>,
+            &'a user_activity::UserActivityUserContributionsCollectionPullRequestReviewContributionsPageInfo,
+        ){
+            let pr_review_conn = &data
+                .user
+                .as_ref()
+                .unwrap()
+                .contributions_collection
+                .pull_request_review_contributions;
+            (&pr_review_conn.nodes, &pr_review_conn.page_info)
+        }
+
+        let extract_page_info = |page_info: &user_activity::UserActivityUserContributionsCollectionPullRequestReviewContributionsPageInfo| {
+            (page_info.end_cursor.clone(), page_info.has_next_page)
+        };
+
+        let nodes = fetch_all_nodes::<
+            user_activity::UserActivityUserContributionsCollectionPullRequestReviewContributionsNodes,
+            user_activity::UserActivityUserContributionsCollectionPullRequestReviewContributionsPageInfo,
+        >(&client, build_vars, extract_pr_review, extract_page_info)
+        .await
+        .unwrap();
+        
+        debug!("Fetched PR review nodes: {:?}", nodes);
+
+        assert_eq!(
+            nodes.len(),
+            2,
+            "Expected 2 PR review nodes but got {}",
+            nodes.len()
+        );
+  }
 }
