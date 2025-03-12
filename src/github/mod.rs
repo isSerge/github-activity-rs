@@ -128,7 +128,7 @@ impl GithubClient {
     /// - `build_vars`: a closure that accepts an optional cursor and returns query variables.
     /// - `extract`: a closure that extracts (Option<Vec<T>>, &P) from ResponseData.
     /// - `extract_page_info`: a closure that converts a reference to page info (of type P) into (Option<String>, bool).
-    async fn fetch_all_nodes<T, P>(
+    async fn fetch_paginated_nodes<T, P>(
         &self,
         build_vars: impl Fn(Option<String>) -> user_activity::Variables,
         extract: impl Fn(&user_activity::ResponseData) -> (&Option<Vec<T>>, &P),
@@ -195,7 +195,7 @@ impl GithubClient {
         first: i64,
     ) -> Result<Vec<user_activity::UserActivityUserContributionsCollectionIssueContributionsNodes>>
     {
-        self.fetch_all_nodes(
+        self.fetch_paginated_nodes(
           |cursor| user_activity::Variables {
               username: self.username.to_string(),
               from: self.start_date.to_rfc3339(),
@@ -225,7 +225,7 @@ impl GithubClient {
     ) -> Result<
         Vec<user_activity::UserActivityUserContributionsCollectionPullRequestContributionsNodes>,
     > {
-        self.fetch_all_nodes(
+        self.fetch_paginated_nodes(
           |cursor| user_activity::Variables {
               username: self.username.to_string(),
               from: self.start_date.to_rfc3339(),
@@ -255,7 +255,7 @@ impl GithubClient {
     ) -> Result<
         Vec<user_activity::UserActivityUserContributionsCollectionPullRequestReviewContributionsNodes>,
     >{
-        self.fetch_all_nodes(
+        self.fetch_paginated_nodes(
           |cursor| user_activity::Variables {
               username: self.username.to_string(),
               from: self.start_date.to_rfc3339(),
