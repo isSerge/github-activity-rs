@@ -205,12 +205,16 @@ pub async fn fetch_activity(
     let base_request = UserActivity::build_query(base_variables);
     debug!("Base GraphQL request: {:?}", base_request);
 
+    let graphql_url = std::env::var("GITHUB_GRAPHQL_URL")
+        .unwrap_or_else(|_| "https://api.github.com/graphql".into());
+
     let res = client
-        .post("https://api.github.com/graphql")
+        .post(&graphql_url)
         .json(&base_request)
         .send()
         .await
         .context("Failed to send base request")?;
+
     let response_body: Response<user_activity::ResponseData> =
         res.json().await.context("Failed to parse base response")?;
     if let Some(errors) = response_body.errors {
@@ -251,11 +255,11 @@ mod tests {
     use chrono::Utc;
     use reqwest::Client;
     use serde_json::json;
+    use serial_test::serial;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, ResponseTemplate};
-    use serial_test::serial;
 
     // Helper: Build a full response containing all three connections.
     // For the connection of interest, we provide Some(node) and specific pageInfo.
@@ -616,7 +620,7 @@ mod tests {
         let counter_clone = call_counter.clone();
         Mock::given(method("POST"))
             .and(path("/graphql"))
-            .respond_with(move |_req: &wiremock::Request| { 
+            .respond_with(move |_req: &wiremock::Request| {
                 let call_num = counter_clone.fetch_add(1, Ordering::SeqCst);
                 if call_num == 0 {
                     ResponseTemplate::new(200).set_body_json(response_page1.clone())
@@ -635,7 +639,7 @@ mod tests {
                 format!("{}/graphql", mock_server.uri()),
             );
         }
-        
+
         let client = Client::new();
         let build_vars = |cursor: Option<String>| user_activity::Variables {
             username: "dummy".into(),
@@ -648,7 +652,7 @@ mod tests {
             pr_reviews_first: 10,
             pr_reviews_after: cursor.clone(),
         };
-        
+
         fn extract_pr_review<'a>(
             data: &'a user_activity::ResponseData,
         ) -> (
@@ -674,7 +678,7 @@ mod tests {
         >(&client, build_vars, extract_pr_review, extract_page_info)
         .await
         .unwrap();
-        
+
         debug!("Fetched PR review nodes: {:?}", nodes);
 
         assert_eq!(
@@ -683,5 +687,53 @@ mod tests {
             "Expected 2 PR review nodes but got {}",
             nodes.len()
         );
-  }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_fetch_activity_base_error() {
+        // Start a mock server (isolated for this test).
+        let mock_server = wiremock::MockServer::start().await;
+
+        // Build a fake error response for the base query.
+        let error_response = serde_json::json!({
+            "data": null,
+            "errors": [
+                { "message": "Base request error" }
+            ]
+        });
+
+        // Mount a mock to return the error response.
+        Mock::given(method("POST"))
+            .and(path("/graphql"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(error_response))
+            .mount(&mock_server)
+            .await;
+
+        unsafe {
+            std::env::set_var(
+                "GITHUB_GRAPHQL_URL",
+                format!("{}/graphql", mock_server.uri()),
+            );
+        }
+
+        let client = Client::new();
+        let start_date = Utc::now();
+        let end_date = Utc::now();
+
+        // Call fetch_activity, which should fail because the base response contains errors.
+        let result = fetch_activity(&client, "dummy", start_date, end_date).await;
+
+        assert!(
+            result.is_err(),
+            "Expected fetch_activity to fail due to base query errors"
+        );
+
+        let err_str = format!("{:?}", result.err().unwrap());
+        assert!(
+            err_str.contains("GraphQL errors in base request"),
+            "Error message did not contain expected text: {}",
+            err_str
+        );
+    }
 }
