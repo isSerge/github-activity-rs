@@ -52,8 +52,13 @@ type ContributionCalendarDay {
 
 type IssueContributions {
   totalCount: Int!
-  pageInfo: PageInfo!
+  pageInfo: IssueContributionsPageInfo!
   nodes: [IssueContributionNode!]
+}
+
+type IssueContributionsPageInfo {
+  endCursor: String
+  hasNextPage: Boolean!
 }
 
 type IssueContributionNode {
@@ -65,13 +70,20 @@ type Issue {
   title: String!
   createdAt: DateTime!
   url: String!
+  state: String!
+  closedAt: DateTime
   repository: Repository!
 }
 
 type PullRequestContributions {
   totalCount: Int!
-  pageInfo: PageInfo!
+  pageInfo: PullRequestContributionsPageInfo!
   nodes: [PullRequestContributionNode!]
+}
+
+type PullRequestContributionsPageInfo {
+  endCursor: String
+  hasNextPage: Boolean!
 }
 
 type PullRequestContributionNode {
@@ -83,13 +95,22 @@ type PullRequest {
   title: String!
   createdAt: DateTime!
   url: String!
+  state: String!
+  merged: Boolean!
+  mergedAt: DateTime
+  closedAt: DateTime
   repository: Repository!
 }
 
 type PullRequestReviewContributions {
   totalCount: Int!
-  pageInfo: PageInfo!
+  pageInfo: PullRequestReviewContributionsPageInfo!
   nodes: [PullRequestReviewContributionNode!]
+}
+
+type PullRequestReviewContributionsPageInfo {
+  endCursor: String
+  hasNextPage: Boolean!
 }
 
 type PullRequestReviewContributionNode {
@@ -100,9 +121,4 @@ type PullRequestReviewContributionNode {
 type PullRequestReview {
   pullRequest: PullRequest!
   createdAt: DateTime!
-}
-
-type PageInfo {
-  endCursor: String
-  hasNextPage: Boolean!
 }

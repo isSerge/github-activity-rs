@@ -18,12 +18,9 @@ type DateTime = String;
 pub struct UserActivity;
 
 /// Generic helper function to fetch all nodes from a paginated connection.
-/// 
-/// - `build_vars`: Closure that accepts an optional cursor and returns the query variables.
-/// - `extract`: Closure that, given a reference to ResponseData, returns a tuple of 
-///    (Option<Vec<T>> for nodes, &P for page info).
-/// - `extract_page_info`: Closure that, given a reference to a page info of type P, returns a tuple 
-///    (Option<String> for the end cursor, bool for has_next_page).
+/// - `build_vars`: a closure that accepts an optional cursor and returns query variables.
+/// - `extract`: a closure that extracts (Option<Vec<T>>, &P) from ResponseData.
+/// - `extract_page_info`: a closure that converts a reference to page info (of type P) into (Option<String>, bool).
 async fn fetch_all_nodes<T, P>(
     client: &Client,
     build_vars: impl Fn(Option<String>) -> user_activity::Variables,
@@ -78,7 +75,6 @@ where
             break;
         }
     }
-
     Ok(all_nodes)
 }
 
@@ -98,13 +94,12 @@ async fn fetch_issue_nodes(
             to: end_date.to_rfc3339(),
             issues_first: first,
             issues_after: cursor,
-            prs_first: first,           // dummy values for unused variables
+            prs_first: first,           // Dummy values for unused fields.
             prs_after: None,
             pr_reviews_first: first,
             pr_reviews_after: None,
         },
         |data| {
-            // Extract issue contributions from the response.
             let issue_conn = &data.user.as_ref().unwrap().contributions_collection.issue_contributions;
             (&issue_conn.nodes, &issue_conn.page_info)
         },
@@ -188,7 +183,7 @@ pub async fn fetch_activity(
 ) -> Result<user_activity::ResponseData> {
     let first = 10;
 
-    // First, fetch the base data (non-paginated fields).
+    // Fetch base data (non-paginated fields).
     let base_variables = user_activity::Variables {
         username: username.to_string(),
         from: start_date.to_rfc3339(),

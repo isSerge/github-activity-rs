@@ -1,14 +1,4 @@
-query UserActivity(
-  $username: String!, 
-  $from: DateTime!, 
-  $to: DateTime!, 
-  $issuesFirst: Int!, 
-  $issuesAfter: String, 
-  $prsFirst: Int!, 
-  $prsAfter: String, 
-  $prReviewsFirst: Int!, 
-  $prReviewsAfter: String
-) {
+query UserActivity($username: String!, $from: DateTime!, $to: DateTime!, $issuesFirst: Int!, $issuesAfter: String, $prsFirst: Int!, $prsAfter: String, $prReviewsFirst: Int!, $prReviewsAfter: String) {
   user(login: $username) {
     contributionsCollection(from: $from, to: $to) {
       totalCommitContributions
@@ -46,6 +36,8 @@ query UserActivity(
             title
             url
             createdAt
+            state
+            closedAt
           }
         }
       }
@@ -61,6 +53,10 @@ query UserActivity(
             title
             url
             createdAt
+            state
+            merged
+            mergedAt
+            closedAt
           }
         }
       }
