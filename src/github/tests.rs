@@ -1,9 +1,7 @@
 #[cfg(test)]
 mod tests {
-    use crate::github::{fetch_activity, fetch_all_nodes, user_activity};
+    use crate::github::GithubClient;
     use chrono::Utc;
-    use log::debug;
-    use reqwest::Client;
     use serde_json::json;
     use serial_test::serial;
     use std::sync::Arc;
@@ -56,410 +54,38 @@ mod tests {
         })
     }
 
-    #[tokio::test]
-    #[serial]
-    async fn test_fetch_issue_nodes_pagination() {
-        // Start a mock server.
-        let mock_server = wiremock::MockServer::start().await;
-
-        // Build two fake responses for pagination.
-        let response_page1 = build_full_response(
-            Some(json!({
-                "issue": {
-                    "number": 1,
-                    "title": "Issue 1",
-                    "url": "http://example.com/issue1",
-                    "createdAt": "2025-03-01T00:00:00Z",
-                    "state": "open",
-                    "closedAt": null,
-                    "repository": {
-                        "nameWithOwner": "owner/repo1",
-                        "updatedAt": "2025-03-01T00:00:00Z"
-                    }
-                }
-            })),
-            json!({
-                "endCursor": "cursor1",
-                "hasNextPage": true
-            }),
-            None, // dummy for PR
-            json!({ "endCursor": null, "hasNextPage": false }),
-            None, // dummy for PR reviews
-            json!({ "endCursor": null, "hasNextPage": false }),
-        );
-        let response_page2 = build_full_response(
-            Some(json!({
-                "issue": {
-                    "number": 2,
-                    "title": "Issue 2",
-                    "url": "http://example.com/issue2",
-                    "createdAt": "2025-03-02T00:00:00Z",
-                    "state": "closed",
-                    "closedAt": "2025-03-03T00:00:00Z",
-                    "repository": {
-                        "nameWithOwner": "owner/repo2",
-                        "updatedAt": "2025-03-02T00:00:00Z"
-                    }
-                }
-            })),
-            json!({
-                "endCursor": null,
-                "hasNextPage": false
-            }),
-            None,
-            json!({ "endCursor": null, "hasNextPage": false }),
-            None,
-            json!({ "endCursor": null, "hasNextPage": false }),
-        );
-
-        // Use an atomic counter to keep track of the number of calls.
-        let call_counter = Arc::new(AtomicUsize::new(0));
-        let counter_clone = call_counter.clone();
-
-        // Mount a single mock that returns different responses based on the call count.
-        Mock::given(method("POST"))
-            .and(path("/graphql"))
-            .respond_with(move |_request: &wiremock::Request| {
-                let call_num = counter_clone.fetch_add(1, Ordering::SeqCst);
-                if call_num == 0 {
-                    ResponseTemplate::new(200).set_body_json(response_page1.clone())
-                } else if call_num == 1 {
-                    ResponseTemplate::new(200).set_body_json(response_page2.clone())
-                } else {
-                    // Fallback: return a valid (but empty) response.
-                    ResponseTemplate::new(200).set_body_string("{\"data\":{\"user\":null}}")
-                }
-            })
-            .mount(&mock_server)
-            .await;
-
-        // Override the URL by setting the environment variable.
-        unsafe {
-            std::env::set_var(
-                "GITHUB_GRAPHQL_URL",
-                format!("{}/graphql", mock_server.uri()),
-            );
-        }
-
-        let client = Client::new();
-
-        // Define a dummy build_vars closure.
-        let build_vars = |cursor: Option<String>| user_activity::Variables {
-            username: "dummy".into(),
-            from: Utc::now().to_rfc3339(),
-            to: Utc::now().to_rfc3339(),
-            issues_first: 10,
-            issues_after: cursor,
-            prs_first: 10, // Dummy values; not used in this test.
-            prs_after: None,
-            pr_reviews_first: 10,
-            pr_reviews_after: None,
-        };
-
-        // Define a function to extract issue contributions with explicit lifetimes.
-        fn extract_issue<'a>(
-            data: &'a user_activity::ResponseData,
-        ) -> (
-            &'a Option<
-                Vec<user_activity::UserActivityUserContributionsCollectionIssueContributionsNodes>,
-            >,
-            &'a user_activity::UserActivityUserContributionsCollectionIssueContributionsPageInfo,
-        ) {
-            let issue_conn = &data
-                .user
-                .as_ref()
-                .unwrap()
-                .contributions_collection
-                .issue_contributions;
-            (&issue_conn.nodes, &issue_conn.page_info)
-        }
-
-        // Closure to extract the pagination info.
-        let extract_page_info = |page_info: &user_activity::UserActivityUserContributionsCollectionIssueContributionsPageInfo| {
-        (page_info.end_cursor.clone(), page_info.has_next_page)
-    };
-
-        // Call the fetch_all_nodes helper.
-        let nodes = fetch_all_nodes::<
-            user_activity::UserActivityUserContributionsCollectionIssueContributionsNodes,
-            user_activity::UserActivityUserContributionsCollectionIssueContributionsPageInfo,
-        >(&client, build_vars, extract_issue, extract_page_info)
-        .await
-        .unwrap();
-
-        // Assert that we aggregated 2 nodes.
-        assert_eq!(nodes.len(), 2);
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn test_fetch_pr_nodes_pagination() {
-        // This test focuses on pullRequestContributions.
-        let mock_server = wiremock::MockServer::start().await;
-        // Build two responses: first page with a next cursor, second page final.
-        let response_page1 = build_full_response(
-            None, // issueContributions: empty
-            json!({ "endCursor": null, "hasNextPage": false }),
-            Some(json!({
-                "pullRequest": {
-                    "number": 101,
-                    "title": "PR 1",
-                    "url": "http://example.com/pr1",
-                    "createdAt": "2025-03-01T00:00:00Z",
-                    "state": "open",
-                    "merged": false,
-                    "mergedAt": null,
-                    "closedAt": null,
-                    "repository": {
-                        "nameWithOwner": "owner/repo1",
-                        "updatedAt": "2025-03-01T00:00:00Z"
-                    }
-                }
-            })),
-            json!({ "endCursor": "pr_cursor1", "hasNextPage": true }),
-            None, // pullRequestReviewContributions dummy empty
-            json!({ "endCursor": null, "hasNextPage": false }),
-        );
-        let response_page2 = build_full_response(
-            None,
-            json!({ "endCursor": null, "hasNextPage": false }),
-            Some(json!({
-                "pullRequest": {
-                    "number": 102,
-                    "title": "PR 2",
-                    "url": "http://example.com/pr2",
-                    "createdAt": "2025-03-02T00:00:00Z",
-                    "state": "closed",
-                    "merged": true,
-                    "mergedAt": "2025-03-03T00:00:00Z",
-                    "closedAt": "2025-03-04T00:00:00Z",
-                    "repository": {
-                        "nameWithOwner": "owner/repo2",
-                        "updatedAt": "2025-03-02T00:00:00Z"
-                    }
-                }
-            })),
-            json!({ "endCursor": null, "hasNextPage": false }),
-            None,
-            json!({ "endCursor": null, "hasNextPage": false }),
-        );
-
-        // Use an atomic counter to alternate responses.
-        let call_counter = Arc::new(AtomicUsize::new(0));
-        let counter_clone = call_counter.clone();
-        Mock::given(method("POST"))
-            .and(path("/graphql"))
-            .respond_with(move |_req: &wiremock::Request| {
-                let call_num = counter_clone.fetch_add(1, Ordering::SeqCst);
-                if call_num == 0 {
-                    ResponseTemplate::new(200).set_body_json(response_page1.clone())
-                } else if call_num == 1 {
-                    ResponseTemplate::new(200).set_body_json(response_page2.clone())
-                } else {
-                    ResponseTemplate::new(200).set_body_string("{\"data\":{\"user\":null}}")
-                }
-            })
-            .mount(&mock_server)
-            .await;
-
-        unsafe {
-            std::env::set_var(
-                "GITHUB_GRAPHQL_URL",
-                format!("{}/graphql", mock_server.uri()),
-            );
-        }
-
-        let client = Client::new();
-        let build_vars = |cursor: Option<String>| user_activity::Variables {
-            username: "dummy".into(),
-            from: Utc::now().to_rfc3339(),
-            to: Utc::now().to_rfc3339(),
-            issues_first: 10,
-            issues_after: cursor.clone(),
-            prs_first: 10,
-            prs_after: cursor.clone(), // Notice: for PR nodes, we pass the cursor.
-            pr_reviews_first: 10,
-            pr_reviews_after: None,
-        };
-
-        fn extract_pr<'a>(
-            data: &'a user_activity::ResponseData,
-        ) -> (
-            &'a Option<Vec<user_activity::UserActivityUserContributionsCollectionPullRequestContributionsNodes>>,
-            &'a user_activity::UserActivityUserContributionsCollectionPullRequestContributionsPageInfo,
-        ){
-            let pr_conn = &data
-                .user
-                .as_ref()
-                .unwrap()
-                .contributions_collection
-                .pull_request_contributions;
-            (&pr_conn.nodes, &pr_conn.page_info)
-        }
-
-        let extract_page_info = |page_info: &user_activity::UserActivityUserContributionsCollectionPullRequestContributionsPageInfo| {
-            (page_info.end_cursor.clone(), page_info.has_next_page)
-        };
-
-        let nodes = fetch_all_nodes::<
-            user_activity::UserActivityUserContributionsCollectionPullRequestContributionsNodes,
-            user_activity::UserActivityUserContributionsCollectionPullRequestContributionsPageInfo,
-        >(&client, build_vars, extract_pr, extract_page_info)
-        .await
-        .unwrap();
-
-        debug!("Fetched PR nodes: {:?}", nodes);
-        assert_eq!(
-            nodes.len(),
-            2,
-            "Expected 2 PR nodes but got {}",
-            nodes.len()
-        );
-    }
-
-    #[tokio::test]
-    #[serial]
-    async fn test_fetch_pr_review_nodes_pagination() {
-        // This test focuses on pullRequestReviewContributions.
-        let mock_server = wiremock::MockServer::start().await;
-
-        // Build two responses: first page with a next cursor, second page final.
-        let response_page1 = build_full_response(
-            None, // issueContributions: empty
-            json!({ "endCursor": null, "hasNextPage": false }),
-            None, // pullRequestContributions: empty
-            json!({ "endCursor": null, "hasNextPage": false }),
-            Some(json!({
-                "occurredAt": "2025-03-01T00:00:00Z",
-                "pullRequestReview": {
-                    "createdAt": "2025-03-01T00:00:00Z",
-                    "pullRequest": {
-                        "number": 101,
-                        "title": "PR 1",
-                        "url": "http://example.com/pr1",
-                        "createdAt": "2025-03-01T00:00:00Z",
-                        "state": "open"
-                    }
-                }
-            })),
-            json!({ "endCursor": "pr_review_cursor1", "hasNextPage": true }),
-        );
-        let response_page2 = build_full_response(
-            None,
-            json!({ "endCursor": null, "hasNextPage": false }),
-            None,
-            json!({ "endCursor": null, "hasNextPage": false }),
-            Some(json!({
-                "occurredAt": "2025-03-02T00:00:00Z",
-                "pullRequestReview": {
-                    "createdAt": "2025-03-02T00:00:00Z",
-                    "pullRequest": {
-                        "number": 102,
-                        "title": "PR 2",
-                        "url": "http://example.com/pr2",
-                        "createdAt": "2025-03-02T00:00:00Z",
-                        "state": "closed"
-                    }
-                }
-            })),
-            json!({ "endCursor": null, "hasNextPage": false }),
-        );
-
-        // Use an atomic counter to alternate responses.
-        let call_counter = Arc::new(AtomicUsize::new(0));
-        let counter_clone = call_counter.clone();
-        Mock::given(method("POST"))
-            .and(path("/graphql"))
-            .respond_with(move |_req: &wiremock::Request| {
-                let call_num = counter_clone.fetch_add(1, Ordering::SeqCst);
-                if call_num == 0 {
-                    ResponseTemplate::new(200).set_body_json(response_page1.clone())
-                } else if call_num == 1 {
-                    ResponseTemplate::new(200).set_body_json(response_page2.clone())
-                } else {
-                    ResponseTemplate::new(200).set_body_string("{\"data\":{\"user\":null}}")
-                }
-            })
-            .mount(&mock_server)
-            .await;
-
-        unsafe {
-            std::env::set_var(
-                "GITHUB_GRAPHQL_URL",
-                format!("{}/graphql", mock_server.uri()),
-            );
-        }
-
-        let client = Client::new();
-        let build_vars = |cursor: Option<String>| user_activity::Variables {
-            username: "dummy".into(),
-            from: Utc::now().to_rfc3339(),
-            to: Utc::now().to_rfc3339(),
-            issues_first: 10,
-            issues_after: cursor.clone(),
-            prs_first: 10,
-            prs_after: None,
-            pr_reviews_first: 10,
-            pr_reviews_after: cursor.clone(),
-        };
-
-        fn extract_pr_review<'a>(
-            data: &'a user_activity::ResponseData,
-        ) -> (
-            &'a Option<Vec<user_activity::UserActivityUserContributionsCollectionPullRequestReviewContributionsNodes>>,
-            &'a user_activity::UserActivityUserContributionsCollectionPullRequestReviewContributionsPageInfo,
-        ){
-            let pr_review_conn = &data
-                .user
-                .as_ref()
-                .unwrap()
-                .contributions_collection
-                .pull_request_review_contributions;
-            (&pr_review_conn.nodes, &pr_review_conn.page_info)
-        }
-
-        let extract_page_info = |page_info: &user_activity::UserActivityUserContributionsCollectionPullRequestReviewContributionsPageInfo| {
-            (page_info.end_cursor.clone(), page_info.has_next_page)
-        };
-
-        let nodes = fetch_all_nodes::<
-            user_activity::UserActivityUserContributionsCollectionPullRequestReviewContributionsNodes,
-            user_activity::UserActivityUserContributionsCollectionPullRequestReviewContributionsPageInfo,
-        >(&client, build_vars, extract_pr_review, extract_page_info)
-        .await
-        .unwrap();
-
-        debug!("Fetched PR review nodes: {:?}", nodes);
-
-        assert_eq!(
-            nodes.len(),
-            2,
-            "Expected 2 PR review nodes but got {}",
-            nodes.len()
-        );
+    // Helper to create a dummy GithubClient for testing.
+    // We use a dummy token since wiremock intercepts the HTTP requests.
+    fn create_test_client() -> GithubClient {
+        let dummy_token = "dummy_token".to_string();
+        let username = "dummy".to_string();
+        let start_date = Utc::now();
+        let end_date = Utc::now();
+        GithubClient::new(dummy_token, username, start_date, end_date).unwrap()
     }
 
     #[tokio::test]
     #[serial]
     async fn test_fetch_activity_base_error() {
-        // Start a mock server (isolated for this test).
+        // Start a mock server.
         let mock_server = wiremock::MockServer::start().await;
 
         // Build a fake error response for the base query.
-        let error_response = serde_json::json!({
+        let error_response = json!({
             "data": null,
             "errors": [
                 { "message": "Base request error" }
             ]
         });
 
-        // Mount a mock to return the error response.
+        // Mount a mock that returns the error response.
         Mock::given(method("POST"))
             .and(path("/graphql"))
             .respond_with(ResponseTemplate::new(200).set_body_json(error_response))
             .mount(&mock_server)
             .await;
 
+        // Set the environment variable so that the client uses our mock server.
         unsafe {
             std::env::set_var(
                 "GITHUB_GRAPHQL_URL",
@@ -467,12 +93,8 @@ mod tests {
             );
         }
 
-        let client = Client::new();
-        let start_date = Utc::now();
-        let end_date = Utc::now();
-
-        // Call fetch_activity, which should fail because the base response contains errors.
-        let result = fetch_activity(&client, "dummy", start_date, end_date).await;
+        let client = create_test_client();
+        let result = client.fetch_activity().await;
 
         assert!(
             result.is_err(),
@@ -490,7 +112,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_fetch_activity_merge_data() {
-        // Start a mock server (isolated for this test).
+        // Start a mock server.
         let mock_server = wiremock::MockServer::start().await;
 
         // Build a base response that contains valid non-paginated fields (empty node arrays).
@@ -527,8 +149,7 @@ mod tests {
             }
         });
 
-        // Use the helper already defined in your tests to build a full response.
-        // For paginated responses, we simulate one page containing a single node each.
+        // Build paginated responses for issues, pull requests, and PR reviews.
         let issue_response = build_full_response(
             Some(json!({
                 "issue": {
@@ -545,14 +166,14 @@ mod tests {
                 }
             })),
             json!({ "endCursor": null, "hasNextPage": false }),
-            None, // pull request contributions dummy
+            None,
             json!({ "endCursor": null, "hasNextPage": false }),
-            None, // pull request review contributions dummy
+            None,
             json!({ "endCursor": null, "hasNextPage": false }),
         );
 
         let pr_response = build_full_response(
-            None, // issue contributions dummy
+            None,
             json!({ "endCursor": null, "hasNextPage": false }),
             Some(json!({
                 "pullRequest": {
@@ -571,14 +192,14 @@ mod tests {
                 }
             })),
             json!({ "endCursor": null, "hasNextPage": false }),
-            None, // pull request review contributions dummy
+            None,
             json!({ "endCursor": null, "hasNextPage": false }),
         );
 
         let pr_review_response = build_full_response(
-            None, // issue contributions dummy
+            None,
             json!({ "endCursor": null, "hasNextPage": false }),
-            None, // pull request contributions dummy
+            None,
             json!({ "endCursor": null, "hasNextPage": false }),
             Some(json!({
                 "occurredAt": "2025-03-01T00:00:00Z",
@@ -596,11 +217,9 @@ mod tests {
             json!({ "endCursor": null, "hasNextPage": false }),
         );
 
-        // Use an atomic counter so that we return responses in sequence.
-        // We expect 4 POST requests in total: one base query and one for each pagination.
+        // Use an atomic counter to return responses in sequence.
         let call_counter = Arc::new(AtomicUsize::new(0));
         let counter_clone = call_counter.clone();
-
         Mock::given(method("POST"))
             .and(path("/graphql"))
             .respond_with(move |_req: &wiremock::Request| {
@@ -616,6 +235,7 @@ mod tests {
             .mount(&mock_server)
             .await;
 
+        // Set the environment variable for the mock.
         unsafe {
             std::env::set_var(
                 "GITHUB_GRAPHQL_URL",
@@ -623,16 +243,11 @@ mod tests {
             );
         }
 
-        let client = Client::new();
-        let start_date = Utc::now();
-        let end_date = Utc::now();
-
-        // Call fetch_activity which first gets the base response then runs the paginated queries concurrently.
-        let merged_data = fetch_activity(&client, "dummy", start_date, end_date)
+        let client = create_test_client();
+        let merged_data = client
+            .fetch_activity()
             .await
             .expect("fetch_activity failed");
-
-        // Verify that the base data has been updated with the nodes from the paginated calls.
         let user = merged_data.user.expect("Expected user data");
         let contributions = user.contributions_collection;
 
@@ -649,7 +264,7 @@ mod tests {
             .nodes
             .expect("Expected PR review nodes");
 
-        // We expect one node in each connection (replacing the base empty arrays).
+        // We expect one node in each connection.
         assert_eq!(issue_nodes.len(), 1, "Expected 1 issue node");
         assert_eq!(pr_nodes.len(), 1, "Expected 1 PR node");
         assert_eq!(pr_review_nodes.len(), 1, "Expected 1 PR review node");

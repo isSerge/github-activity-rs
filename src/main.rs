@@ -9,7 +9,6 @@ use clap::Parser;
 use dotenv::dotenv;
 use format::{format_markdown, format_plain};
 use log::{debug, info};
-use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue, USER_AGENT};
 use std::env;
 
 #[tokio::main]
@@ -32,29 +31,23 @@ async fn run() -> anyhow::Result<()> {
         env::var("GITHUB_TOKEN").context("GITHUB_TOKEN environment variable is required")?;
     debug!("GitHub token retrieved successfully.");
 
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        AUTHORIZATION,
-        HeaderValue::from_str(&format!("Bearer {}", github_token))
-            .context("Failed to build authorization header")?,
-    );
-    headers.insert(USER_AGENT, HeaderValue::from_static("github-activity-rs"));
-
-    let client = reqwest::Client::builder()
-        .default_headers(headers)
-        .build()
-        .context("Failed to build HTTP client")?;
-    debug!("HTTP client built successfully.");
-
     let (start_date, end_date) = args
         .get_date_range()
         .map_err(|e| anyhow::anyhow!("Failed to get date range: {}", e))?;
     info!("Fetching activity from {} to {}", start_date, end_date);
 
-    let activity =
-        github::fetch_activity(&client, &args.username.to_string(), start_date, end_date)
-            .await
-            .context("Failed to fetch activity from GitHub API")?;
+    let github_client = github::GithubClient::new(
+        github_token,
+        args.username.to_string(),
+        start_date,
+        end_date,
+    )
+    .context("Failed to create GitHub client")?;
+
+    let activity = github_client
+        .fetch_activity()
+        .await
+        .context("Failed to fetch activity from GitHub API")?;
     info!("Activity fetched successfully.");
 
     let filtered_activity = filter::filter_activity(activity, &args.repo, &args.org);
