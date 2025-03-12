@@ -13,27 +13,37 @@ use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue, USER_AGENT};
 use std::env;
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() {
     dotenv().ok();
     env_logger::init();
 
+    if let Err(err) = run().await {
+        eprintln!("Error: {}", format_error(&err));
+        std::process::exit(1);
+    }
+}
+
+/// Run the core logic of the program.
+async fn run() -> anyhow::Result<()> {
     let args = Args::parse();
     info!("Starting GitHub activity fetch for user: {}", args.username);
 
     let github_token =
-        env::var("GITHUB_TOKEN").expect("GITHUB_TOKEN environment variable is required");
+        env::var("GITHUB_TOKEN").context("GITHUB_TOKEN environment variable is required")?;
     debug!("GitHub token retrieved successfully.");
 
     let mut headers = HeaderMap::new();
     headers.insert(
         AUTHORIZATION,
-        HeaderValue::from_str(&format!("Bearer {}", github_token))?,
+        HeaderValue::from_str(&format!("Bearer {}", github_token))
+            .context("Failed to build authorization header")?,
     );
     headers.insert(USER_AGENT, HeaderValue::from_static("github-activity-rs"));
 
     let client = reqwest::Client::builder()
         .default_headers(headers)
-        .build()?;
+        .build()
+        .context("Failed to build HTTP client")?;
     debug!("HTTP client built successfully.");
 
     let (start_date, end_date) = args
@@ -42,7 +52,9 @@ async fn main() -> anyhow::Result<()> {
     info!("Fetching activity from {} to {}", start_date, end_date);
 
     let activity =
-        github::fetch_activity(&client, &args.username.to_string(), start_date, end_date).await?;
+        github::fetch_activity(&client, &args.username.to_string(), start_date, end_date)
+            .await
+            .context("Failed to fetch activity from GitHub API")?;
     info!("Activity fetched successfully.");
 
     let filtered_activity = filter::filter_activity(activity, &args.repo, &args.org);
@@ -68,6 +80,25 @@ async fn main() -> anyhow::Result<()> {
             );
         }
     }
-
     Ok(())
+}
+
+/// Format an error message for the user.
+fn format_error(error: &anyhow::Error) -> String {
+    // Check if the error is a reqwest error and further, what kind it is.
+    if let Some(reqwest_err) = error.downcast_ref::<reqwest::Error>() {
+        if reqwest_err.is_connect() {
+            return format!("Network connection error: {}", reqwest_err);
+        } else if reqwest_err.is_timeout() {
+            return format!("Network timeout error: {}", reqwest_err);
+        } else {
+            return format!("HTTP error: {}", reqwest_err);
+        }
+    }
+    // Check if the error came from JSON parsing.
+    if let Some(json_err) = error.downcast_ref::<serde_json::Error>() {
+        return format!("Data parsing error: {}", json_err);
+    }
+    // Fallback to showing the full error chain.
+    format!("{:#}", error)
 }
