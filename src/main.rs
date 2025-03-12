@@ -10,7 +10,7 @@ use anyhow::Context;
 use args::{Args, OutputFormat};
 use clap::Parser;
 use dotenv::dotenv;
-use format::{format_markdown, format_plain};
+use format::{FormatData, MarkdownFormatter, PlainTextFormatter};
 use log::{debug, info};
 use std::env;
 
@@ -66,13 +66,23 @@ async fn run() -> anyhow::Result<()> {
         OutputFormat::Plain => {
             println!(
                 "{}",
-                format_plain(&filtered_activity, start_date, end_date, &args.username.0)
+                PlainTextFormatter.format(
+                    &filtered_activity,
+                    start_date,
+                    end_date,
+                    &args.username.0
+                )
             );
         }
         OutputFormat::Markdown => {
             println!(
                 "{}",
-                format_markdown(&filtered_activity, start_date, end_date, &args.username.0)
+                MarkdownFormatter.format(
+                    &filtered_activity,
+                    start_date,
+                    end_date,
+                    &args.username.0
+                )
             );
         }
     }
