@@ -13,6 +13,7 @@ use dotenv::dotenv;
 use format::{FormatData, MarkdownFormatter, PlainTextFormatter};
 use log::{debug, info};
 use std::env;
+use std::fs;
 
 #[tokio::main]
 async fn main() {
@@ -55,37 +56,43 @@ async fn run() -> anyhow::Result<()> {
 
     let filtered_activity = filter::filter_activity(activity, &args.repo, &args.org);
 
-    match args.format {
-        OutputFormat::Json => {
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&filtered_activity)
-                    .context("Failed to serialize activity to JSON")?
-            );
+    // Infer output format from the output file extension if provided.
+    let output_format = if let Some(ref output_path) = args.output {
+        if let Some(ext) = output_path.extension().and_then(|s| s.to_str()) {
+            match ext.to_lowercase().as_str() {
+                "md" | "markdown" => OutputFormat::Markdown,
+                "txt" => OutputFormat::Plain,
+                "json" => OutputFormat::Json,
+                _ => args.format.clone(), // fall back to user-specified/default
+            }
+        } else {
+            args.format.clone()
         }
+    } else {
+        args.format.clone()
+    };
+
+    // Generate the report in the specified format
+    let report = match output_format {
+        OutputFormat::Json => serde_json::to_string_pretty(&filtered_activity)
+            .context("Failed to serialize activity to JSON")?,
         OutputFormat::Plain => {
-            println!(
-                "{}",
-                PlainTextFormatter.format(
-                    &filtered_activity,
-                    start_date,
-                    end_date,
-                    &args.username.0
-                )
-            );
+            PlainTextFormatter.format(&filtered_activity, start_date, end_date, &args.username.0)
         }
         OutputFormat::Markdown => {
-            println!(
-                "{}",
-                MarkdownFormatter.format(
-                    &filtered_activity,
-                    start_date,
-                    end_date,
-                    &args.username.0
-                )
-            );
+            MarkdownFormatter.format(&filtered_activity, start_date, end_date, &args.username.0)
         }
+    };
+
+    // Write report to a file if specified, otherwise print it.
+    if let Some(output_path) = args.output {
+        fs::write(&output_path, report)
+            .with_context(|| format!("Failed to write report to {:?}", output_path))?;
+        println!("Report saved to {:?}", output_path);
+    } else {
+        println!("{}", report);
     }
+
     Ok(())
 }
 

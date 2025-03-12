@@ -2,6 +2,7 @@ use chrono::{DateTime, Duration, Utc};
 use clap::Parser;
 use regex::Regex;
 use std::str::FromStr;
+use std::path::PathBuf;
 
 /// Command-line arguments for the GitHub activity tool.
 #[derive(Parser, Debug)]
@@ -37,6 +38,10 @@ pub struct Args {
     /// Output format: plain, markdown, or json
     #[arg(short, long, default_value = "json", value_parser = parse_output_format)]
     pub format: OutputFormat,
+
+    /// Path to the output file, if not specified, the output will be printed to the console
+    #[arg(short, long)]
+    pub output: Option<PathBuf>,
 }
 
 impl Args {
@@ -269,6 +274,7 @@ mod tests {
             repo: None,
             org: None,
             format: OutputFormat::Json,
+            output: None,
         };
         let range = args.get_date_range();
         assert!(range.is_ok());
@@ -289,6 +295,7 @@ mod tests {
             repo: None,
             org: None,
             format: OutputFormat::Json,
+            output: None,
         };
         let range = args.get_date_range();
         assert!(range.is_ok());
@@ -310,6 +317,7 @@ mod tests {
             repo: None,
             org: None,
             format: OutputFormat::Json,
+            output: None,
         };
         let range = args.get_date_range();
         assert!(range.is_err());

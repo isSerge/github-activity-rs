@@ -55,6 +55,11 @@ cargo run -- --username octocat --from 2024-01-01T00:00:00Z --to 2024-01-31T00:0
 cargo run -- --username octocat --period 30d --repo "owner/repo" --org "owner" --format json
 ```
 
+- Saving report as a file:
+```sh
+cargo run -- --username octocat --period 7d --output report.md
+```
+
 ### Available command-line arguments:
 - `--username`: GitHub username
 - `--period`: Relative time period (e.g., 7d, 2w, 1m)
@@ -62,6 +67,7 @@ cargo run -- --username octocat --period 30d --repo "owner/repo" --org "owner" -
 - `--repo`: Filter results to contributions from the specified repository
 - `--org`: Filter results to contributions from repositories in the specified organization
 - `--format`: Output format (plain, markdown, or json)
+- `--output`: Output file path where the report will be saved. If not provided, output is printed to stdout.
 
 ## Testing
 Run all tests using Cargo:
