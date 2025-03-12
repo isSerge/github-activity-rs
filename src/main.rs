@@ -1,3 +1,6 @@
+#![warn(missing_docs)]
+//! GitHub Activity Reporter: a command-line tool that fetches and formats GitHub activity.
+
 mod args;
 mod filter;
 mod format;
