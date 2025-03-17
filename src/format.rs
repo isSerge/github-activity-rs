@@ -67,7 +67,7 @@ impl FormatData for PlainTextFormatter {
                     ));
                 }
             }
-            output.push_str("\n");
+            output.push('\n');
 
             // Repository Contributions
             output.push_str("Repository Contributions:\n");
@@ -77,7 +77,7 @@ impl FormatData for PlainTextFormatter {
                     repo_contrib.repository.name_with_owner, repo_contrib.contributions.total_count
                 ));
             }
-            output.push_str("\n");
+            output.push('\n');
 
             // Issue Contributions
             output.push_str("Issue Contributions:\n");
@@ -95,7 +95,7 @@ impl FormatData for PlainTextFormatter {
                     ));
                 }
             }
-            output.push_str("\n");
+            output.push('\n');
 
             // Pull Request Contributions
             output.push_str("Pull Request Contributions:\n");
@@ -115,7 +115,7 @@ impl FormatData for PlainTextFormatter {
                     ));
                 }
             }
-            output.push_str("\n");
+            output.push('\n');
 
             // Pull Request Review Contributions
             output.push_str("Pull Request Review Contributions:\n");
@@ -190,7 +190,7 @@ impl FormatData for MarkdownFormatter {
                     ));
                 }
             }
-            output.push_str("\n");
+            output.push('\n');
 
             // Repository Contributions
             output.push_str("## Repository Contributions\n\n");
@@ -202,7 +202,7 @@ impl FormatData for MarkdownFormatter {
                     repo_contrib.repository.name_with_owner, repo_contrib.contributions.total_count
                 ));
             }
-            output.push_str("\n");
+            output.push('\n');
 
             // Issue Contributions
             output.push_str("## Issue Contributions\n\n");
@@ -222,7 +222,7 @@ impl FormatData for MarkdownFormatter {
                     ));
                 }
             }
-            output.push_str("\n");
+            output.push('\n');
 
             // Pull Request Contributions
             output.push_str("## Pull Request Contributions\n\n");
@@ -248,7 +248,7 @@ impl FormatData for MarkdownFormatter {
                     ));
                 }
             }
-            output.push_str("\n");
+            output.push('\n');
 
             // Pull Request Review Contributions
             output.push_str("## Pull Request Review Contributions\n\n");

@@ -99,7 +99,7 @@ impl std::fmt::Display for GitHubUsername {
 fn parse_period(arg: &str) -> Result<Duration, String> {
     let (amount, unit) = arg.split_at(
         arg.find(|c: char| !c.is_ascii_digit())
-            .ok_or_else(|| "Invalid period format. Use e.g., 1d, 7d, 30d, 2w, 1m")?,
+            .ok_or("Invalid period format. Use e.g., 1d, 7d, 30d, 2w, 1m")?,
     );
 
     let amount: i64 = amount.parse().map_err(|_| "Invalid number in period")?;
@@ -132,9 +132,7 @@ fn parse_datetime(s: &str) -> Result<DateTime<Utc>, String> {
         ));
     }
 
-    Err(format!(
-        "Invalid date format. Use ISO 8601 format (e.g., 2024-01-01 or 2024-01-01T00:00:00Z)"
-    ))
+    Err("Invalid date format. Use ISO 8601 format (e.g., 2024-01-01 or 2024-01-01T00:00:00Z)".to_string())
 }
 
 /// Supported output formats.
