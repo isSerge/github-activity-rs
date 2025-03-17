@@ -1,71 +1,69 @@
-#[cfg(test)]
-mod tests {
-    use crate::github::GithubClient;
-    use chrono::Utc;
-    use serde_json::{json, Value};
-    use std::sync::Arc;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use temp_env::with_var;
-    use wiremock::matchers::{method, path};
-    use wiremock::{Mock, ResponseTemplate, MockServer};
-    use tokio::runtime::Runtime;
+use crate::github::GithubClient;
+use chrono::Utc;
+use serde_json::{Value, json};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use temp_env::with_var;
+use tokio::runtime::Runtime;
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    // Helper: Build a full response containing all three connections.
-    // For the connection of interest, we provide Some(node) and specific pageInfo.
-    // For the others, we supply dummy empty responses.
-    fn build_full_response(
-        issue: Option<Value>,
-        issue_page_info: Value,
-        pr: Option<Value>,
-        pr_page_info: Value,
-        pr_review: Option<Value>,
-        pr_review_page_info: Value,
-    ) -> Value {
-        json!({
-            "data": {
-                "user": {
-                    "contributionsCollection": {
-                        "totalCommitContributions": 0,
-                        "totalIssueContributions": 0,
-                        "totalPullRequestContributions": 0,
-                        "totalPullRequestReviewContributions": 0,
-                        "contributionCalendar": {
-                            "totalContributions": 0,
-                            "weeks": []
-                        },
-                        "commitContributionsByRepository": [],
-                        "issueContributions": {
-                            "totalCount": if issue.is_some() { 2 } else { 0 },
-                            "pageInfo": issue_page_info,
-                            "nodes": if let Some(v) = issue { vec![v] } else { vec![] }
-                        },
-                        "pullRequestContributions": {
-                            "totalCount": if pr.is_some() { 2 } else { 0 },
-                            "pageInfo": pr_page_info,
-                            "nodes": if let Some(v) = pr { vec![v] } else { vec![] }
-                        },
-                        "pullRequestReviewContributions": {
-                            "totalCount": if pr_review.is_some() { 2 } else { 0 },
-                            "pageInfo": pr_review_page_info,
-                            "nodes": if let Some(v) = pr_review { vec![v] } else { vec![] }
-                        }
+// Helper: Build a full response containing all three connections.
+// For the connection of interest, we provide Some(node) and specific pageInfo.
+// For the others, we supply dummy empty responses.
+fn build_full_response(
+    issue: Option<Value>,
+    issue_page_info: Value,
+    pr: Option<Value>,
+    pr_page_info: Value,
+    pr_review: Option<Value>,
+    pr_review_page_info: Value,
+) -> Value {
+    json!({
+        "data": {
+            "user": {
+                "contributionsCollection": {
+                    "totalCommitContributions": 0,
+                    "totalIssueContributions": 0,
+                    "totalPullRequestContributions": 0,
+                    "totalPullRequestReviewContributions": 0,
+                    "contributionCalendar": {
+                        "totalContributions": 0,
+                        "weeks": []
+                    },
+                    "commitContributionsByRepository": [],
+                    "issueContributions": {
+                        "totalCount": if issue.is_some() { 2 } else { 0 },
+                        "pageInfo": issue_page_info,
+                        "nodes": if let Some(v) = issue { vec![v] } else { vec![] }
+                    },
+                    "pullRequestContributions": {
+                        "totalCount": if pr.is_some() { 2 } else { 0 },
+                        "pageInfo": pr_page_info,
+                        "nodes": if let Some(v) = pr { vec![v] } else { vec![] }
+                    },
+                    "pullRequestReviewContributions": {
+                        "totalCount": if pr_review.is_some() { 2 } else { 0 },
+                        "pageInfo": pr_review_page_info,
+                        "nodes": if let Some(v) = pr_review { vec![v] } else { vec![] }
                     }
                 }
             }
-        })
-    }
+        }
+    })
+}
 
-    // Helper to create a dummy GithubClient for testing.
-    // We use a dummy token since wiremock intercepts the HTTP requests.
-    fn create_test_client() -> GithubClient {
-        let dummy_token = "dummy_token".to_string();
-        let username = "dummy".to_string();
-        let start_date = Utc::now();
-        let end_date = Utc::now();
-        GithubClient::new(dummy_token, username, start_date, end_date).unwrap()
-    }
+// Helper to create a dummy GithubClient for testing.
+// We use a dummy token since wiremock intercepts the HTTP requests.
+fn create_test_client() -> GithubClient {
+    let dummy_token = "dummy_token".to_string();
+    let username = "dummy".to_string();
+    let start_date = Utc::now();
+    let end_date = Utc::now();
+    GithubClient::new(dummy_token, username, start_date, end_date).unwrap()
+}
 
-    #[test]
+#[test]
 fn test_fetch_activity_base_error() {
     // Create an initial runtime for async setup.
     let rt = Runtime::new().unwrap();
@@ -228,15 +226,13 @@ fn test_fetch_activity_merge_data() {
         Mock::given(method("POST"))
             .and(path("/graphql"))
             .respond_with(move |_req: &wiremock::Request| {
-                let call_num =
-                    counter_clone.fetch_add(1, Ordering::SeqCst);
+                let call_num = counter_clone.fetch_add(1, Ordering::SeqCst);
                 match call_num {
                     0 => ResponseTemplate::new(200).set_body_json(base_response.clone()),
                     1 => ResponseTemplate::new(200).set_body_json(issue_response.clone()),
                     2 => ResponseTemplate::new(200).set_body_json(pr_response.clone()),
                     3 => ResponseTemplate::new(200).set_body_json(pr_review_response.clone()),
-                    _ => ResponseTemplate::new(200)
-                        .set_body_string("{\"data\":{\"user\":null}}"),
+                    _ => ResponseTemplate::new(200).set_body_string("{\"data\":{\"user\":null}}"),
                 }
             })
             .mount(&server)
@@ -278,5 +274,4 @@ fn test_fetch_activity_merge_data() {
             });
         },
     );
-  }
 }
